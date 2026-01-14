@@ -1,7 +1,10 @@
 ﻿using Microsoft.Data.SqlClient;
 using System.Configuration;
 using System.Data;
+using System.Net.Http;
+using System.Security.Policy;
 using System.Text;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
@@ -12,6 +15,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
 using System.Windows.Shapes;
+using Newtonsoft.Json;
 
 namespace Currency_Converter
 {
@@ -20,6 +24,7 @@ namespace Currency_Converter
     /// </summary>
     public partial class MainWindow : Window
     {
+        Root val = new Root();
         SqlConnection con = new SqlConnection();
         SqlCommand cmd = new SqlCommand();
         SqlDataAdapter da = new SqlDataAdapter();
@@ -28,14 +33,57 @@ namespace Currency_Converter
         private double FromAmount = 0;
         private double ToAmount = 0;
 
+        public class Root()
+        {
+            public string disclaimer { get; set; }
+            public Dictionary<string, decimal> rates { get; set; }
+            public string timestamp { get; set; }
+
+        }
+
+
+
         public MainWindow()
         {
-
-
             InitializeComponent();
+            GetValue();
+        }
+
+
+        private async void GetValue()
+        {
+            val = await Getdata<Root>("https://openexchangerates.org/api/latest.json/?app_id=62a76db6fed646b89eb5f779b31a2eaa");
             DataBinding(Currency_combobox);
             DataBinding(Currency_combobox1);
-            GetData();
+            GetDataFromCurrencyMaster();
+        }
+
+        public static async Task<Root> Getdata<T>(string Url) 
+        {
+            Root myroot = new Root();
+
+            try
+            {
+
+                using (var client = new HttpClient())
+                {
+                    client.Timeout = TimeSpan.FromMinutes(1);
+                    HttpResponseMessage response = await client.GetAsync(Url);
+                    if (response.StatusCode == System.Net.HttpStatusCode.OK)
+                    {
+                        var responsestring = await response.Content.ReadAsStringAsync();
+                        var responseObject = JsonConvert.DeserializeObject<Root>(responsestring);
+                        return responseObject;
+                    }
+                    return myroot;
+                }
+                ;
+            }
+            catch (Exception ex)
+            {
+                return myroot;
+            }
+
         }
 
         public void mycon()
@@ -47,18 +95,19 @@ namespace Currency_Converter
 
         private void DataBinding(ComboBox Currency)
         {
-            //open connection 
-            mycon();
+
             //Create an object for Datatable
             DataTable dt = new DataTable();
-            //Write query to get data from table 
-            cmd = new SqlCommand("select Id, CurrencyName from Currency_master", con);
-            //commandtype we using for writing query
-            cmd.CommandType = CommandType.Text;
+            dt.Columns.Add("CurrencyName", typeof(string));
+            dt.Columns.Add("Id");
 
-            //data opvragen
-            da = new SqlDataAdapter(cmd);
-            da.Fill(dt);
+            foreach (var item in val.rates)
+            {
+                DataRow row = dt.NewRow();
+                row["CurrencyName"] = item.Key;
+                row["Id"]= item.Value;
+                dt.Rows.Add(row);
+            }
 
             //assigning de select row 
             DataRow Newrow = dt.NewRow();
@@ -70,7 +119,6 @@ namespace Currency_Converter
             {
                 Currency.ItemsSource = dt.DefaultView;
             }
-            con.Close();
 
             Currency.DisplayMemberPath = "CurrencyName";
             Currency.SelectedValuePath = "Id";
@@ -169,7 +217,7 @@ namespace Currency_Converter
                                     cmd.ExecuteNonQuery();
                                     MessageBox.Show("Delete statement succeeded", "Information", MessageBoxButton.OK, MessageBoxImage.Information);
                                 }
-                                catch(Exception ex) 
+                                catch (Exception ex)
                                 {
                                     MessageBox.Show(ex.Message);
                                 }
@@ -215,7 +263,7 @@ namespace Currency_Converter
                             cmd.Parameters.AddWithValue("@Amount", Amount.Text);
                             cmd.Parameters.AddWithValue("@Id", CurrencyId);
                             cmd.ExecuteNonQuery();
-                            MessageBox.Show("Update statement succeeded","Information",MessageBoxButton.OK, MessageBoxImage.Information);
+                            MessageBox.Show("Update statement succeeded", "Information", MessageBoxButton.OK, MessageBoxImage.Information);
 
                         }
                         catch (Exception ex)
@@ -231,7 +279,7 @@ namespace Currency_Converter
                 }
                 else
                 {
-                    if(MessageBox.Show("Are u sure u want to Insert?", "information", MessageBoxButton.YesNo) == MessageBoxResult.Yes)
+                    if (MessageBox.Show("Are u sure u want to Insert?", "information", MessageBoxButton.YesNo) == MessageBoxResult.Yes)
                     {
                         try
                         {
@@ -274,14 +322,14 @@ namespace Currency_Converter
             Amount.Clear();
             Currency.Clear();
             Save_bttn.Content = "Save";
-            GetData();
+            GetDataFromCurrencyMaster();
             CurrencyId = 0;
             DataBinding(Currency_combobox);
             DataBinding(Currency_combobox1);
             Amount.Focus();
         }
 
-        private void GetData() 
+        private void GetDataFromCurrencyMaster()
         {
             //open connection 
             mycon();
